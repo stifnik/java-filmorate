@@ -131,6 +131,17 @@ class FilmServiceTest {
         assertTrue(service.getById(createdFilm.getId()).getLikes().isEmpty());
     }
 
+    @Test
+    void shouldDeleteFilmAndRejectDeletingUnknownFilm() {
+        Film otherFilm = service.create(newFilm());
+
+        service.delete(film.getId());
+
+        assertThrows(NotFoundException.class, () -> service.getById(film.getId()));
+        assertThrows(NotFoundException.class, () -> service.delete(film.getId()));
+        assertEquals(List.of(otherFilm), service.getPopular(10));
+    }
+
     private Film newFilm() {
         Film result = new Film();
         result.setName("Фильм");

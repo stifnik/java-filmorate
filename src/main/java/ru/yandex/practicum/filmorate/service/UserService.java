@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
@@ -34,46 +35,58 @@ public class UserService {
     }
 
     public User update(User user) {
+        if (user.getId() == null) {
+            throw new ValidationException("Id пользователя должен быть указан");
+        }
+        User storedUser = getById(user.getId());
         setDisplayName(user);
+        user.setFriends(storedUser.getFriends());
         User updatedUser = userStorage.update(user);
         log.info("Обновлён пользователь с id = {}", updatedUser.getId());
         return updatedUser;
     }
 
     public User getById(long id) {
-        return userStorage.getById(id);
+        return userStorage.getById(id)
+                .orElseThrow(() -> new NotFoundException("Пользователь с id = " + id + " не найден"));
     }
 
     public Collection<User> getAll() {
         return userStorage.getAll();
     }
 
+    public void delete(long id) {
+        getById(id);
+        userStorage.delete(id);
+        log.info("Удалён пользователь с id = {}", id);
+    }
+
     public void addFriend(long id, long friendId) {
-        User user = userStorage.getById(id);
-        User friend = userStorage.getById(friendId);
-        if (id == friendId) {
-            throw new ValidationException("Нельзя добавить себя в друзья");
-        }
+        User user = getById(id);
+        User friend = getById(friendId);
+        validateDifferentUsers(id, friendId);
         user.getFriends().add(friendId);
         friend.getFriends().add(id);
         log.debug("Пользователи {} и {} добавлены в друзья", id, friendId);
     }
 
     public void removeFriend(long id, long friendId) {
-        User user = userStorage.getById(id);
-        User friend = userStorage.getById(friendId);
+        User user = getById(id);
+        User friend = getById(friendId);
+        validateDifferentUsers(id, friendId);
         user.getFriends().remove(friendId);
         friend.getFriends().remove(id);
         log.debug("Дружба пользователей {} и {} удалена", id, friendId);
     }
 
     public List<User> getFriends(long id) {
-        return findUsers(userStorage.getById(id).getFriends());
+        return findUsers(getById(id).getFriends());
     }
 
     public List<User> getCommonFriends(long id, long otherId) {
-        User user = userStorage.getById(id);
-        User otherUser = userStorage.getById(otherId);
+        User user = getById(id);
+        User otherUser = getById(otherId);
+        validateDifferentUsers(id, otherId);
         Set<Long> commonFriends = new HashSet<>(user.getFriends());
         commonFriends.retainAll(otherUser.getFriends());
         log.debug("Общих друзей у пользователей {} и {}: {}", id, otherId, commonFriends.size());
@@ -83,8 +96,14 @@ public class UserService {
     private List<User> findUsers(Set<Long> ids) {
         return ids.stream()
                 .sorted()
-                .map(userStorage::getById)
+                .map(this::getById)
                 .collect(Collectors.toList());
+    }
+
+    private void validateDifferentUsers(long id, long otherId) {
+        if (id == otherId) {
+            throw new ValidationException("Пользователи должны быть разными");
+        }
     }
 
     private void setDisplayName(User user) {

@@ -98,6 +98,34 @@ class UserServiceTest {
     }
 
     @Test
+    void shouldRejectRemovingSelfFromFriendsWithoutChangingFriendships() {
+        service.addFriend(user.getId(), friend.getId());
+
+        assertThrows(ValidationException.class, () -> service.removeFriend(user.getId(), user.getId()));
+        assertEquals(List.of(friend), service.getFriends(user.getId()));
+        assertEquals(List.of(user), service.getFriends(friend.getId()));
+    }
+
+    @Test
+    void shouldRejectFindingCommonFriendsWithSelfWithoutChangingFriendships() {
+        service.addFriend(user.getId(), friend.getId());
+
+        assertThrows(ValidationException.class, () -> service.getCommonFriends(user.getId(), user.getId()));
+        assertEquals(List.of(friend), service.getFriends(user.getId()));
+        assertEquals(List.of(user), service.getFriends(friend.getId()));
+    }
+
+    @Test
+    void shouldDeleteUserAndRejectDeletingUnknownUser() {
+        service.delete(user.getId());
+
+        assertThrows(NotFoundException.class, () -> service.getById(user.getId()));
+        assertThrows(NotFoundException.class, () -> service.delete(user.getId()));
+        assertEquals(1, service.getAll().size());
+        assertEquals(friend, service.getById(friend.getId()));
+    }
+
+    @Test
     void shouldKeepFriendshipWhenUpdatingUser() {
         service.addFriend(user.getId(), friend.getId());
         User update = newUser();

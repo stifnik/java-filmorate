@@ -3,17 +3,17 @@ package ru.yandex.practicum.filmorate.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
+import ru.yandex.practicum.filmorate.model.FriendshipStatus;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class UserService {
@@ -22,13 +22,13 @@ public class UserService {
     private final UserStorage userStorage;
 
     @Autowired
-    public UserService(UserStorage userStorage) {
+    public UserService(@Qualifier("userDbStorage") UserStorage userStorage) {
         this.userStorage = userStorage;
     }
 
     public User create(User user) {
         setDisplayName(user);
-        user.setFriends(new HashSet<>());
+        user.setFriends(new HashMap<>());
         User createdUser = userStorage.create(user);
         log.info("Добавлен пользователь с id = {}", createdUser.getId());
         return createdUser;
@@ -62,42 +62,40 @@ public class UserService {
     }
 
     public void addFriend(long id, long friendId) {
-        User user = getById(id);
+        getById(id);
         User friend = getById(friendId);
         validateDifferentUsers(id, friendId);
-        user.getFriends().add(friendId);
-        friend.getFriends().add(id);
-        log.debug("Пользователи {} и {} добавлены в друзья", id, friendId);
+        if (friend.getFriends().containsKey(id)) {
+            userStorage.saveFriendship(id, friendId, FriendshipStatus.CONFIRMED);
+            userStorage.saveFriendship(friendId, id, FriendshipStatus.CONFIRMED);
+            log.debug("Дружба пользователей {} и {} подтверждена", id, friendId);
+        } else {
+            userStorage.saveFriendship(id, friendId, FriendshipStatus.PENDING);
+            log.debug("Пользователь {} отправил заявку в друзья пользователю {}", id, friendId);
+        }
     }
 
     public void removeFriend(long id, long friendId) {
-        User user = getById(id);
+        getById(id);
         User friend = getById(friendId);
         validateDifferentUsers(id, friendId);
-        user.getFriends().remove(friendId);
-        friend.getFriends().remove(id);
-        log.debug("Дружба пользователей {} и {} удалена", id, friendId);
+        userStorage.removeFriendship(id, friendId);
+        if (friend.getFriends().containsKey(id)) {
+            userStorage.saveFriendship(friendId, id, FriendshipStatus.PENDING);
+        }
+        log.debug("Пользователь {} удалил пользователя {} из друзей", id, friendId);
     }
 
     public List<User> getFriends(long id) {
-        return findUsers(getById(id).getFriends());
+        getById(id);
+        return userStorage.getFriends(id);
     }
 
     public List<User> getCommonFriends(long id, long otherId) {
-        User user = getById(id);
-        User otherUser = getById(otherId);
+        getById(id);
+        getById(otherId);
         validateDifferentUsers(id, otherId);
-        Set<Long> commonFriends = new HashSet<>(user.getFriends());
-        commonFriends.retainAll(otherUser.getFriends());
-        log.debug("Общих друзей у пользователей {} и {}: {}", id, otherId, commonFriends.size());
-        return findUsers(commonFriends);
-    }
-
-    private List<User> findUsers(Set<Long> ids) {
-        return ids.stream()
-                .sorted()
-                .map(this::getById)
-                .collect(Collectors.toList());
+        return userStorage.getCommonFriends(id, otherId);
     }
 
     private void validateDifferentUsers(long id, long otherId) {

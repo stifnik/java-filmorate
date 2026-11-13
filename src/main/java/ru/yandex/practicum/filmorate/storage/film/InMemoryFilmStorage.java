@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Deprecated
 @Component
 public class InMemoryFilmStorage implements FilmStorage {
     private final Map<Long, Film> films = new HashMap<>();
@@ -48,6 +49,16 @@ public class InMemoryFilmStorage implements FilmStorage {
                         .thenComparing(Film::getId))
                 .limit(count)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public void addLike(long id, long userId) {
+        films.get(id).getLikes().add(userId);
+    }
+
+    @Override
+    public void removeLike(long id, long userId) {
+        films.get(id).getLikes().remove(userId);
     }
 
     @Override

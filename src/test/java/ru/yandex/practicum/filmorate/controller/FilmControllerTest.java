@@ -14,6 +14,8 @@ import java.time.LocalDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static ru.yandex.practicum.filmorate.storage.TestData.genreStorage;
+import static ru.yandex.practicum.filmorate.storage.TestData.mpaStorage;
 
 class FilmControllerTest {
     private FilmController controller;
@@ -21,7 +23,8 @@ class FilmControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new FilmController(new FilmService(new InMemoryFilmStorage(), new InMemoryUserStorage()));
+        controller = new FilmController(new FilmService(new InMemoryFilmStorage(), new InMemoryUserStorage(),
+                genreStorage(), mpaStorage()));
         film = newFilm();
     }
 

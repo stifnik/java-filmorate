@@ -4,11 +4,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
+import ru.yandex.practicum.filmorate.model.FriendshipStatus;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,18 +37,60 @@ class UserServiceTest {
 
         assertEquals(List.of(friend), service.getFriends(user.getId()));
         assertEquals(List.of(user), service.getFriends(friend.getId()));
+        assertEquals(Map.of(friend.getId(), FriendshipStatus.CONFIRMED), user.getFriends());
+        assertEquals(Map.of(user.getId(), FriendshipStatus.CONFIRMED), friend.getFriends());
     }
 
     @Test
-    void shouldRemoveFriendshipOnBothSidesAndKeepOtherFriends() {
+    void shouldKeepRepeatedRequestPendingUntilRecipientAccepts() {
+        service.addFriend(user.getId(), friend.getId());
+        service.addFriend(user.getId(), friend.getId());
+
+        assertEquals(Map.of(friend.getId(), FriendshipStatus.PENDING), user.getFriends());
+        assertEquals(List.of(friend), service.getFriends(user.getId()));
+        assertTrue(service.getFriends(friend.getId()).isEmpty());
+    }
+
+    @Test
+    void shouldRemoveOnlyOwnPendingRequest() {
+        service.addFriend(user.getId(), friend.getId());
+
+        service.removeFriend(friend.getId(), user.getId());
+
+        assertEquals(Map.of(friend.getId(), FriendshipStatus.PENDING), user.getFriends());
+        assertTrue(friend.getFriends().isEmpty());
+
+        service.removeFriend(user.getId(), friend.getId());
+
+        assertTrue(user.getFriends().isEmpty());
+    }
+
+    @Test
+    void shouldPreservePendingStatusWhenUpdatingProfile() {
+        service.addFriend(user.getId(), friend.getId());
+        User update = newUser();
+        update.setId(user.getId());
+        update.setFriends(Map.of(friend.getId(), FriendshipStatus.CONFIRMED));
+
+        User updatedUser = service.update(update);
+
+        assertEquals(Map.of(friend.getId(), FriendshipStatus.PENDING), updatedUser.getFriends());
+        assertTrue(friend.getFriends().isEmpty());
+    }
+
+    @Test
+    void shouldRemoveOneDirectionAndKeepOtherFriends() {
         User otherFriend = service.create(newUser());
         service.addFriend(user.getId(), friend.getId());
+        service.addFriend(friend.getId(), user.getId());
         service.addFriend(user.getId(), otherFriend.getId());
+        service.addFriend(otherFriend.getId(), user.getId());
 
         service.removeFriend(friend.getId(), user.getId());
         service.removeFriend(friend.getId(), user.getId());
 
-        assertEquals(List.of(otherFriend), service.getFriends(user.getId()));
+        assertEquals(List.of(friend, otherFriend), service.getFriends(user.getId()));
+        assertEquals(FriendshipStatus.PENDING, user.getFriends().get(friend.getId()));
         assertTrue(service.getFriends(friend.getId()).isEmpty());
         assertEquals(List.of(user), service.getFriends(otherFriend.getId()));
     }
@@ -60,9 +104,9 @@ class UserServiceTest {
         service.addFriend(user.getId(), onlyUserFriend.getId());
 
         assertEquals(List.of(common), service.getCommonFriends(user.getId(), friend.getId()));
-        assertEquals(Set.of(common.getId(), onlyUserFriend.getId()), user.getFriends());
-        assertEquals(Set.of(common.getId()), friend.getFriends());
-        assertEquals(Set.of(user.getId(), friend.getId()), common.getFriends());
+        assertEquals(Set.of(common.getId(), onlyUserFriend.getId()), user.getFriends().keySet());
+        assertEquals(Set.of(common.getId()), friend.getFriends().keySet());
+        assertTrue(common.getFriends().isEmpty());
     }
 
     @Test
@@ -77,6 +121,7 @@ class UserServiceTest {
     void shouldRejectUnknownUsersWithoutChangingFriendships() {
         long missingId = 999L;
         service.addFriend(user.getId(), friend.getId());
+        service.addFriend(friend.getId(), user.getId());
 
         assertThrows(NotFoundException.class, () -> service.getById(missingId));
         assertThrows(NotFoundException.class, () -> service.getFriends(missingId));
@@ -100,6 +145,7 @@ class UserServiceTest {
     @Test
     void shouldRejectRemovingSelfFromFriendsWithoutChangingFriendships() {
         service.addFriend(user.getId(), friend.getId());
+        service.addFriend(friend.getId(), user.getId());
 
         assertThrows(ValidationException.class, () -> service.removeFriend(user.getId(), user.getId()));
         assertEquals(List.of(friend), service.getFriends(user.getId()));
@@ -109,6 +155,7 @@ class UserServiceTest {
     @Test
     void shouldRejectFindingCommonFriendsWithSelfWithoutChangingFriendships() {
         service.addFriend(user.getId(), friend.getId());
+        service.addFriend(friend.getId(), user.getId());
 
         assertThrows(ValidationException.class, () -> service.getCommonFriends(user.getId(), user.getId()));
         assertEquals(List.of(friend), service.getFriends(user.getId()));
@@ -128,24 +175,25 @@ class UserServiceTest {
     @Test
     void shouldKeepFriendshipWhenUpdatingUser() {
         service.addFriend(user.getId(), friend.getId());
+        service.addFriend(friend.getId(), user.getId());
         User update = newUser();
         update.setId(user.getId());
         update.setLogin("updated");
-        update.setFriends(Set.of(999L));
+        update.setFriends(Map.of(999L, FriendshipStatus.CONFIRMED));
 
         User updatedUser = service.update(update);
 
         assertEquals("updated", updatedUser.getLogin());
         assertEquals("updated", updatedUser.getName());
-        assertEquals(Set.of(friend.getId()), updatedUser.getFriends());
-        assertEquals(Set.of(user.getId()), service.getById(friend.getId()).getFriends());
+        assertEquals(Map.of(friend.getId(), FriendshipStatus.CONFIRMED), updatedUser.getFriends());
+        assertEquals(Map.of(user.getId(), FriendshipStatus.CONFIRMED), service.getById(friend.getId()).getFriends());
         assertEquals(List.of(updatedUser), service.getFriends(friend.getId()));
     }
 
     @Test
     void shouldCreateUserWithoutSuppliedFriendships() {
         User newUser = newUser();
-        newUser.setFriends(Set.of(user.getId()));
+        newUser.setFriends(Map.of(user.getId(), FriendshipStatus.CONFIRMED));
 
         User createdUser = service.create(newUser);
 
